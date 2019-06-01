@@ -44,7 +44,7 @@ For more information, please refer to the following paper.
 
 by Kai Zhang (03/03/2019)
 '''
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def main():
 
@@ -57,17 +57,16 @@ def main():
     # basic setting
     # ================================================
     sf = 4
-    show_img = True
+    show_img = False
     noise_level_img = 8./255.
-    testsets = 'testsets'
-    testset_current = 'real_imgs'
+    testsets = '/home/share2/VisDrone2019/TASK1/VisDrone2019-DET-val/'
 
-    im = '0000001_02999_d_0000005.jpg'  # chip.png colour.png
+    #im = '0000115_01031_d_0000082.jpg'  # chip.png colour.png
 
-    if 'chip' in im:
-        noise_level_img = 8./255.
-    elif 'colour' in im:
-        noise_level_img = 0.5/255.
+   # if 'chip' in im:
+     #   noise_level_img = 8./255.
+   # elif 'colour' in im:
+        #noise_level_img = 0.5/255.
 
     use_srganplus = False
     if use_srganplus and sf == 4:
@@ -102,10 +101,10 @@ def main():
     # (2) L_folder, E_folder
     # --------------------------------
     # --1--> L_folder, folder of Low-quality images
-    L_folder = os.path.join(testsets, testset_current, 'LR')  # L: Low quality
+    L_folder = os.path.join(testsets, 'images')  # L: Low quality
 
     # --2--> E_folder, folder of Estimated images
-    E_folder = os.path.join(testsets, testset_current, 'x{:01d}_'.format(sf)+save_suffix)
+    E_folder = os.path.join(testsets, 'x{:01d}_'.format(sf)+save_suffix)
     util.mkdir(E_folder)
 
     logger.info(L_folder)
@@ -116,83 +115,86 @@ def main():
     # --------------------------------
     # (3) load low-resolution image
     # --------------------------------
-    img_name, ext = os.path.splitext(im)
-    img = util.imread_uint(os.path.join(L_folder, im), n_channels=n_channels)
-    h, w = img.shape[:2]
-    util.imshow(img, title='Low-resolution image') if show_img else None
-    img = util.unit2single(img)
+    img_list = os.listdir(L_folder)
+    for im in img_list:
+        img_path, ext = os.path.splitext(im)
+        img_name = img_path.split('/')[-1]
+        img = util.imread_uint(os.path.join(L_folder,im), n_channels=n_channels)
+        h, w = img.shape[:2]
+        util.imshow(img, title='Low-resolution image') if show_img else None
+        img = util.unit2single(img)
 
-    # --------------------------------
-    # (4) load blur kernel
-    # --------------------------------
-    if os.path.exists(os.path.join(L_folder, img_name+'_kernel.mat')):
-        k = loadmat(os.path.join(L_folder, img_name+'.mat'))['kernel']
-        k = k.astype(np.float64)
-        k /= k.sum()
-    elif os.path.exists(os.path.join(L_folder, img_name+'_kernel.png')):
-        k = cv2.imread(os.path.join(L_folder, img_name+'_kernel.png'), 0)
-        k = np.float64(k)  # float64 !
-        k /= k.sum()
-    else:
+        # --------------------------------
+        # (4) load blur kernel
+        # --------------------------------
+       # if os.path.exists(os.path.join(L_folder, img_name+'_kernel.mat')):
+           # k = loadmat(os.path.join(L_folder, img_name+'.mat'))['kernel']
+          #  k = k.astype(np.float64)
+          #  k /= k.sum()
+       # elif os.path.exists(os.path.join(L_folder, img_name+'_kernel.png')):
+         #   k = cv2.imread(os.path.join(L_folder, img_name+'_kernel.png'), 0)
+        #    k = np.float64(k)  # float64 !
+        #    k /= k.sum()
+        #else:
         k = utils_deblur.fspecial('gaussian', 5, 0.25)
         iter_num = 5
 
-    # --------------------------------
-    # (5) handle boundary
-    # --------------------------------
-    img = utils_deblur.wrap_boundary_liu(img, utils_deblur.opt_fft_size([img.shape[0]+k.shape[0]+1, img.shape[1]+k.shape[1]+1]))
-
-    # --------------------------------
-    # (6) get upperleft, denominator
-    # --------------------------------
-    upperleft, denominator = utils_deblur.get_uperleft_denominator(img, k)
-
-    # --------------------------------
-    # (7) get rhos and sigmas
-    # --------------------------------
-    rhos, sigmas = utils_deblur.get_rho_sigma(sigma=max(0.255/255.0, noise_level_img), iter_num=iter_num)
-
-    # --------------------------------
-    # (8) main iteration
-    # --------------------------------
-    z = img
-    rhos = np.float32(rhos)
-    sigmas = np.float32(sigmas)
-
-    for i in range(iter_num):
-
-        logger.info('Iter: {:->4d}--> {}'.format(i+1, im))
         # --------------------------------
-        # step 1, Eq. (9) // FFT
+        # (5) handle boundary
         # --------------------------------
-        rho = rhos[i]
-        if i != 0:
-            z = util.imresize_np(z, 1/sf, True)
-
-        z = np.real(np.fft.ifft2((upperleft + rho*np.fft.fft2(z, axes=(0, 1)))/(denominator + rho), axes=(0, 1)))
+        img = utils_deblur.wrap_boundary_liu(img, utils_deblur.opt_fft_size([img.shape[0]+k.shape[0]+1, img.shape[1]+k.shape[1]+1]))
 
         # --------------------------------
-        # step 2, Eq. (12) // super-resolver
+        # (6) get upperleft, denominator
         # --------------------------------
-        sigma = torch.from_numpy(np.array(sigmas[i]))
-        img_L = util.single2tensor4(z)
+        upperleft, denominator = utils_deblur.get_uperleft_denominator(img, k)
 
-        noise_level_map = torch.ones((1, 1, img_L.size(2), img_L.size(3)), dtype=torch.float).mul_(sigma)
-        img_L = torch.cat((img_L, noise_level_map), dim=1)
-        img_L = img_L.to(device)
-        # with torch.no_grad():
-        z = model(img_L)
-        z = util.tensor2single(z)
+        # --------------------------------
+        # (7) get rhos and sigmas
+        # --------------------------------
+        rhos, sigmas = utils_deblur.get_rho_sigma(sigma=max(0.255/255.0, noise_level_img), iter_num=iter_num)
 
-    # --------------------------------
-    # (9) img_E
-    # --------------------------------
-    img_E = util.single2uint(z[:h*sf, :w*sf])  # np.uint8((z[:h*sf, :w*sf] * 255.0).round())
+        # --------------------------------
+        # (8) main iteration
+        # --------------------------------
+        z = img
+        rhos = np.float32(rhos)
+        sigmas = np.float32(sigmas)
 
-    logger.info('saving: sf = {}, {}.'.format(sf, img_name+'_x{}'.format(sf)+ext))
-    util.imsave(img_E, os.path.join(E_folder, img_name+'_x{}'.format(sf)+ext))
+        for i in range(iter_num):
 
-    util.imshow(img_E, title='Recovered image') if show_img else None
+            logger.info('Iter: {:->4d}--> {}'.format(i+1, im))
+            # --------------------------------
+            # step 1, Eq. (9) // FFT
+            # --------------------------------
+            rho = rhos[i]
+            if i != 0:
+                z = util.imresize_np(z, 1/sf, True)
+
+            z = np.real(np.fft.ifft2((upperleft + rho*np.fft.fft2(z, axes=(0, 1)))/(denominator + rho), axes=(0, 1)))
+
+            # --------------------------------
+            # step 2, Eq. (12) // super-resolver
+            # --------------------------------
+            sigma = torch.from_numpy(np.array(sigmas[i]))
+            img_L = util.single2tensor4(z)
+
+            noise_level_map = torch.ones((1, 1, img_L.size(2), img_L.size(3)), dtype=torch.float).mul_(sigma)
+            img_L = torch.cat((img_L, noise_level_map), dim=1)
+            img_L = img_L.to(device)
+            # with torch.no_grad():
+            z = model(img_L)
+            z = util.tensor2single(z)
+
+        # --------------------------------
+        # (9) img_E
+        # --------------------------------
+        img_E = util.single2uint(z[:h*sf, :w*sf])  # np.uint8((z[:h*sf, :w*sf] * 255.0).round())
+
+        logger.info('saving: sf = {}, {}.'.format(sf, img_name+'_x{}'.format(sf)+ext))
+        util.imsave(img_E, os.path.join(E_folder, img_name+'_x{}'.format(sf)+ext))
+
+        util.imshow(img_E, title='Recovered image') if show_img else None
 
 
 if __name__ == '__main__':
