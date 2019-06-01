@@ -2,7 +2,7 @@ import os.path
 import glob
 import logging
 import cv2
-
+import argparse
 import numpy as np
 from datetime import datetime
 from collections import OrderedDict
@@ -15,6 +15,10 @@ from utils import utils_logger
 from utils import utils_image as util
 from models.network_srresnet import SRResNet
 
+parser = argparse.ArgumentParser(description='DPSR')
+parser.add_argument('--sf', default=4, type=int, metavar='N', help='number of sf')
+parser.add_argument('--load', default='', type=str, metavar='PATH', help='path to load')
+parser.add_argument('--save', default='', type=str, metavar='PATH', help='path to save')
 
 '''
 Spyder (Python 3.6)
@@ -53,13 +57,14 @@ def main():
     # --------------------------------
     utils_logger.logger_info('test_dpsr_real', log_path='test_dpsr_real.log')
     logger = logging.getLogger('test_dpsr_real')
-
+    global arg
+    arg = parser.parse_args()
     # basic setting
     # ================================================
-    sf = 4
+    sf = arg.sf
     show_img = False
     noise_level_img = 8./255.
-    testsets = '/home/share2/VisDrone2019/TASK1/VisDrone2019-DET-val/'
+    #testsets = '/home/share2/wutong/DPSR/testsets/test/'
 
     #im = '0000115_01031_d_0000082.jpg'  # chip.png colour.png
 
@@ -101,10 +106,10 @@ def main():
     # (2) L_folder, E_folder
     # --------------------------------
     # --1--> L_folder, folder of Low-quality images
-    L_folder = os.path.join(testsets, 'images')  # L: Low quality
+    L_folder = os.path.join(arg.load)  # L: Low quality
 
     # --2--> E_folder, folder of Estimated images
-    E_folder = os.path.join(testsets, 'x{:01d}_'.format(sf)+save_suffix)
+    E_folder = os.path.join(arg.save)
     util.mkdir(E_folder)
 
     logger.info(L_folder)
@@ -192,7 +197,7 @@ def main():
         img_E = util.single2uint(z[:h*sf, :w*sf])  # np.uint8((z[:h*sf, :w*sf] * 255.0).round())
 
         logger.info('saving: sf = {}, {}.'.format(sf, img_name+'_x{}'.format(sf)+ext))
-        util.imsave(img_E, os.path.join(E_folder, img_name+'_x{}'.format(sf)+ext))
+        util.imsave(img_E, os.path.join(E_folder, img_name+ext))
 
         util.imshow(img_E, title='Recovered image') if show_img else None
 
